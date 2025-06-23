@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+import sys
+import subprocess
+import argparse
+import os.path
+
+default_file_globs = '*.h *.c *.cpp *.cc'
+
+def shell_quote(regex):
+    quote = '"' if "'" in regex else "'"
+    return quote + regex + quote
+
+def main(args):
+
+#   if not args.dry_run:
+    shell_arrow = '>'
+    for file_glob in args.file_globs.split():
+        # find files matching each file glob and append them to a file named args.file_list
+    #   shell_cmd = f"find {args.directory} -type f -name '{file_glob}' | grep -v ' ' {shell_arrow} {args.file_list}"
+        # try to deal with spaces by using sed to add a double quote before and after each file name
+        shell_cmd = f"find {args.directory} -type f -name '{file_glob}' | sed 's/^/\"/;s/$/\"/' {shell_arrow} {args.file_list}"
+        if args.verbose:
+            print(f"{shell_cmd}")
+        if not args.dry_run:
+            subprocess.call(shell_cmd, shell=True)
+        shell_arrow = '>>'
+
+#   shell_cmd = "find . -name '*.h' | grep -v ' ' > file_list; find . -name '*.c' | grep -v ' ' >> file_list"
+#   print("shell_cmd='{}'".format(shell_cmd))
+#   if not args.dry_run:
+#       subprocess.call(shell_cmd, shell=True)
+
+    cmd = [ 'egrep' ]
+    if args.ignore_case:
+        cmd.append('-i')
+    if args.line_number:
+        cmd.append('-n')
+    if args.files_with_matches:
+        cmd.append('-l')
+    if not args.dull:
+        cmd.append('--color')
+
+    if args.before_context > 0:
+        cmd.append(f'--before-context={args.before_context}')
+    if args.after_context > 0:
+        cmd.append(f'--after-context={args.after_context}')
+
+    cmd.append(shell_quote(args.needle))
+    grep_cmd = ' '.join(cmd)
+#   print("grep_cmd='{}'".format(grep_cmd))
+
+#   with open('file_list', 'r') as fh:
+#       for filename in fh:
+#           filename = filename.rstrip()
+#           if os.path.isfile(filename):
+#               cmd.append(filename)
+
+    shell_cmd = f"cat {args.file_list} | xargs {grep_cmd}"
+    if args.verbose:
+        print(shell_cmd)
+    if not args.dry_run:
+        subprocess.call(shell_cmd, shell=True)
+
+    return 0
+
+if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser(description='search code for regex needle')
+#   parser.add_argument('--gap', help='inter-packet gap in microsecond for reordered packets', type=int, default=10000)
+#   parser.add_argument('--timeout', help='timeout in seconds to run tshark', type=int, default=120)
+    parser.add_argument('-d', '--directory', help='directory to look for file', default='.')
+    parser.add_argument('--file-globs', help=f'file glob patterns: default --file-globs="{default_file_globs}"', default=default_file_globs)
+    parser.add_argument('--file-list', help='path to temp file containing list of files', default='file_list')
+    parser.add_argument('-i', '--ignore-case', action='store_true')
+    parser.add_argument('-n', '--line-number', action='store_true')
+    parser.add_argument('-l', '--files-with-matches', help='print only names of FILEs with no selected lines', action='store_true')
+    parser.add_argument('--dull', help='turn off color', action='store_true')
+    parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--verbose', help='extra logging', action='store_true')
+
+    parser.add_argument('-B', '--before-context', type=int, help='print NUM lines of leading context', default=0)
+    parser.add_argument('-A', '--after-context' , type=int, help='print NUM lines of trailing context', default=0)
+
+    parser.add_argument('needle')
+
+    args = parser.parse_args()
+
+    if args.files_with_matches:
+        args.dull = True        # turn off colors in output
+
+    if args.verbose:
+        print(args)
+
+    sys.exit(main(args))

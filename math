@@ -1,0 +1,380 @@
+#!/usr/bin/env python3
+import sys
+import re
+import math
+import argparse
+
+# Rajesh's implementation of the shunting yard algorithm
+
+class ParseException(Exception):
+    def __init__(self, msg, offset):
+        self.msg = msg
+        self.offset = offset
+
+class Regex(object):
+    '''regular expression helper object'''
+    def __init__(self, regex):
+        self.re = re.compile(regex)
+        self.m = None
+    def match(self, s):
+        self.m = self.re.match(s)
+        return self.m
+    def search(self, s):
+        self.m = self.re.search(s)
+        return self.m
+    def group(self, n):
+        return self.m.group(n)
+
+class Token(object):
+    '''tokens recognized by the Lexer'''
+    # token types
+    UNARY_MINUS = 0
+    UNARY_PLUS  = 1
+    FLOAT       = 2
+    INTEGER     = 3
+    LPAREN      = 4
+    INT_FUNC    = 5
+    FLOAT_FUNC  = 6
+    ROUND_FUNC  = 7
+    ABS_FUNC    = 8
+    SQRT_FUNC   = 9
+    RPAREN      = 10
+    EXP         = 11
+    MULT        = 12
+    DIV         = 13
+    MOD         = 14
+    ADD         = 15
+    SUBTRACT    = 16
+
+    def __init__(self, type, val):
+        self.type = type
+        self.val  = val
+
+class Lexer(object):
+    '''lexer to recognizer tokens in a mathematical expression'''
+    # lex states
+    START           = 0 # expect the things that can come at the start of an expression
+    AFTER_NUM       = 1 # expect the things that can follow a number or number like sub expression
+    AFTER_FUNC      = 2 #
+
+    def __init__(self, expr, options):
+        self.expr = expr
+        self.options = options
+        self.state = Lexer.START
+        self.i = 0
+
+    def getToken(self):
+
+        float_regex = Regex(r'([0-9]+)?\.[0-9]+')
+        hexidecimal_regex = Regex(r'0x[0-9a-fA-F]+')
+        decimal_regex = Regex(r'0|[1-9][0-9]*')
+        octal_regex = Regex(r'0[0-7]*')
+
+        # skip over white space
+        while self.i < len(self.expr) and self.expr[self.i] in '\t ':
+            self.i += 1
+
+        if self.options.debug:
+            print(self.expr)
+            print(' ' * self.i + '^')
+
+        token = None
+
+        if self.i < len(self.expr):
+
+            if self.state == Lexer.START:
+
+                # unary plus
+                if self.expr[self.i] == '+':
+                    self.i += len('+')
+                    token = Token(Token.UNARY_PLUS, 'unary +')
+                # unary minus
+                elif self.expr[self.i] == '-':
+                    self.i += len('-')
+                    token = Token(Token.UNARY_MINUS, 'unary -')
+                # pi
+                elif self.expr[self.i:].startswith('pi'):
+                    self.i += len('pi')
+                    token = Token(Token.FLOAT, math.pi)
+                    self.state = Lexer.AFTER_NUM
+                # float TODO 1.2e-2
+                # ([0-9]+|[0-9]*\.[0-9]+|[0-9]+\.[0-9]*)(e[-+]?[0-9]+)?
+                elif float_regex.match(self.expr[self.i:]):
+                    token = float_regex.group(0)
+                    self.i += len(token)
+                    token = Token(Token.FLOAT, float(token))
+                    self.state = Lexer.AFTER_NUM
+                # integer (hexidecimal)
+                elif hexidecimal_regex.match(self.expr[self.i:]):
+                    token = hexidecimal_regex.group(0)
+                    self.i += len(token)
+                    token = Token(Token.INTEGER, int(token, 16))
+                    self.state = Lexer.AFTER_NUM
+                # integer (decimal)
+                elif decimal_regex.match(self.expr[self.i:]):
+                    token = decimal_regex.group(0)
+                    self.i += len(token)
+                    token = Token(Token.INTEGER, int(token))
+                    self.state = Lexer.AFTER_NUM
+                # integer (octal)
+                elif octal_regex.match(self.expr[self.i:]):
+                    token = octal_regex.group(0)
+                    self.i += len(token)
+                    token = Token(Token.INTEGER, int(token, 8))
+                    self.state = Lexer.AFTER_NUM
+                elif self.expr[self.i] == '(':
+                    self.i += len('(')
+                    token = Token(Token.LPAREN, '(')
+
+                elif self.expr[self.i:].startswith('int'):
+                    self.i += len('int')
+                    token = Token(Token.INT_FUNC, 'int')
+                    self.state = Lexer.AFTER_FUNC
+
+                elif self.expr[self.i:].startswith('float'):
+                    self.i += len('float')
+                    token = Token(Token.FLOAT_FUNC, 'float')
+                    self.state = Lexer.AFTER_FUNC
+
+                elif self.expr[self.i:].startswith('round'):
+                    self.i += len('round')
+                    token = Token(Token.ROUND_FUNC, 'round')
+                    self.state = Lexer.AFTER_FUNC
+
+                elif self.expr[self.i:].startswith('abs'):
+                    self.i += len('abs')
+                    token = Token(Token.ABS_FUNC, 'abs')
+                    self.state = Lexer.AFTER_FUNC
+
+                elif self.expr[self.i:].startswith('sqrt'):
+                    self.i += len('sqrt')
+                    token = Token(Token.SQRT_FUNC, 'sqrt')
+                    self.state = Lexer.AFTER_FUNC
+
+                else:
+                    raise ParseException('unexpected input', self.i)
+
+            elif self.state == Lexer.AFTER_FUNC:
+
+                if self.expr[self.i] == '(':
+                    self.i += len('(')
+                    token = Token(Token.LPAREN, '(')
+                    self.state = Lexer.START
+                else:
+                    raise ParseException('unexpected input', self.i)
+
+            elif self.state == Lexer.AFTER_NUM:
+
+                if self.expr[self.i] == ')':
+                    self.i += len(')')
+                    token = Token(Token.RPAREN, ')')
+
+                elif self.expr[self.i:].startswith('**'):
+                    self.i += len('**')
+                    token = Token(Token.EXP, '**')
+                    self.state = Lexer.START
+
+                elif self.expr[self.i] == '*':
+                    self.i += len('*')
+                    token = Token(Token.MULT, '*')
+                    self.state = Lexer.START
+
+                elif self.expr[self.i] == '/':
+                    self.i += len('/')
+                    token = Token(Token.DIV, '/')
+                    self.state = Lexer.START
+
+                elif self.expr[self.i] == '%':
+                    self.i += len('%')
+                    token = Token(Token.MOD, '%')
+                    self.state = Lexer.START
+
+                elif self.expr[self.i] == '+':
+                    self.i += len('+')
+                    token = Token(Token.ADD, '+')
+                    self.state = Lexer.START
+
+                elif self.expr[self.i] == '-':
+                    self.i += len('-')
+                    token = Token(Token.SUBTRACT, '-')
+                    self.state = Lexer.START
+                else:
+                    raise ParseException('unexpected input', self.i)
+
+        return token
+
+def parse(expression, options):
+    operands  = []
+    operator_stack = []
+
+    lex = Lexer(expression, options)
+
+    class BinaryOp(object):
+        def __init__(self, precedence, associative, func):
+            self.precedence  = precedence
+            self.associative = associative
+            self.func        = func
+
+    def divide(n, d):
+        '''fix python 2.x division to behave like C'''
+        sign = -1 if (n < 0) != (d < 0) else 1
+        return abs(n) / abs(d) * sign
+
+    def modulus(n, d):
+        '''fix python 2.x modulus to behave like C'''
+        sign = -1 if n < 0 else 1
+        return abs(n) % abs(d) * sign
+
+    # binary operators
+    binary_op = { Token.EXP      : BinaryOp(4, 'right', lambda a, b: a ** b),
+                  Token.MULT     : BinaryOp(3, 'left',  lambda a, b: a * b),
+                  Token.DIV      : BinaryOp(3, 'left',  divide),
+                  Token.MOD      : BinaryOp(3, 'left',  modulus),
+                  Token.ADD      : BinaryOp(2, 'left',  lambda a, b: a + b),
+                  Token.SUBTRACT : BinaryOp(2, 'left',  lambda a, b: a - b) }
+
+    # functions with single operand and surrounding parenthesis. ex: int ( 5.9 ) -> 5
+    functions = { Token.INT_FUNC    : lambda a: int(a),
+                  Token.FLOAT_FUNC  : lambda a: float(a),
+                  Token.ROUND_FUNC  : lambda a: round(a),
+                  Token.ABS_FUNC    : lambda a: abs(a),
+                  Token.SQRT_FUNC   : lambda a: math.sqrt(a) }
+
+    # multi-argument functions to add. ex: min(3, (1+1), 7) -> 2
+    # min()
+    # max()
+    def dump_stacks():
+        if options.debug:
+            print('operands={0}'.format(operands))
+            print('operator_stack={0}'.format(map(lambda op: op.val, operator_stack)))
+            print('=' * 20)
+
+    def apply_unary_minus():
+        # while there are unary minus operators on the top of the operator_stack
+        while len(operator_stack) and operator_stack[-1].type == Token.UNARY_MINUS:
+            # pop the unary minus from the operaror_stack
+            operator_stack.pop()
+            # pop the operand (number) belonging to the unary minus off the operands stack, negate it and push it back
+            operands.append(-operands.pop())
+        dump_stacks()
+
+    def operands_append(number):
+        operands.append(number)
+        apply_unary_minus()
+
+    token = lex.getToken()
+    while token is not None:
+
+        if options.debug:
+            print('token={0}'.format(token.val))
+            dump_stacks()
+
+        if token.type == Token.INTEGER or token.type == Token.FLOAT:
+            val = token.val
+            operands_append(token.val)
+        elif token.type in functions:
+            operator_stack.append(token)
+        elif token.type == Token.UNARY_MINUS:
+            operator_stack.append(token)
+        elif token.type == Token.UNARY_PLUS:
+            pass
+        elif token.type in binary_op:
+
+            new_op = binary_op[token.type]
+            while len(operator_stack) > 0 and operator_stack[-1].type in binary_op:
+                old_op = binary_op[operator_stack[-1].type]
+                if (new_op.associative == 'left' and new_op.precedence <= old_op.precedence) or \
+                   (new_op.associative == 'right' and new_op.precedence < old_op.precedence):
+                    operator_stack.pop()
+                    right = operands.pop()
+                    left  = operands.pop()
+                    operands_append(old_op.func(left, right))
+                else:
+                    break
+            operator_stack.append(token)
+
+        elif token.type == Token.LPAREN:
+            operator_stack.append(token)
+
+        elif token.type == Token.RPAREN:
+
+            op = operator_stack.pop()
+            while op.type != Token.LPAREN:
+
+                if op.type in binary_op:
+                    if len(operands) < 2:
+                        raise ParseException('not enough operands for '.format(stack_op.val), lex.i)
+                    right = operands.pop()
+                    left  = operands.pop()
+                    operands_append(binary_op[op.type].func(left, right))
+                op = operator_stack.pop()
+
+            if len(operator_stack) > 0 and operator_stack[-1].type in functions:
+                op = operator_stack.pop()
+                operands_append(functions[op.type](operands.pop()))
+
+            apply_unary_minus()
+
+        token = lex.getToken()
+
+    while len(operator_stack) > 0:
+        op = operator_stack.pop()
+        if op.type not in binary_op:
+            raise ParseException('invalid binary operator '.format(op.val), lex.i)
+        if len(operands) < 2:
+            raise ParseException('not enough operands for '.format(op.val), lex.i)
+        right = operands.pop()
+        left  = operands.pop()
+        operands_append(binary_op[op.type].func(left, right))
+
+    return operands.pop()
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='evaluates a mathematical expression')
+
+    parser.add_argument('-x', '--hex', help='output in hex', action='store_true')
+    parser.add_argument('-d', '--debug', help='show debug output', action='store_true')
+    parser.add_argument('-t', '--test', help='run unit tests', action='store_true')
+    parser.add_argument('expression', nargs='?', help='mathematical expression')
+    args = parser.parse_args()
+
+#   print("args='{0}'".format(args))
+
+    if args.test:
+        test_list = [ ('1 + 1', 1 + 1),
+                      ('(1 + (2 + (3 + (4 + (5)))))', (1 + (2 + (3 + (4 + (5)))))),
+                      ('((((((2) * 3) * 4) * 5) * 6) * 7)', ((((((2) * 3) * 4) * 5) * 6) * 7)),
+                      ('2**3**4', 2**3**4),
+                      ('6 * (5 + 4) / 3', 6 * (5 + 4) / 3),
+                      ('---(5)', ---(5)),
+                      ('25*---4', 25*---4),
+                      ('---int(17.9) % 5', abs(---int(17.9)) % 5 * (-1 if ((---int(17.9)) < 0) != ((5) < 0) else 1)),
+                      ('abs(2.0 / -3)', abs(2.0 / -3)),
+                      ('2 * pi * 3**2', 2 * math.pi * 3**2),
+                      ('2/3', 2/3),
+                      ('2.0**2 / 2.0**2 / 2.0**2', 2.0**2 / 2.0**2 / 2.0**2),
+                      ('4**2 - 3**2 - 2**2', 4**2 - 3**2 - 2**2),
+                      ('float(2)/3', float(2)/3),
+                      ('round(10.0/3)', round(10.0/3)) ]
+        for expression, expected in test_list:
+            actual = parse(expression, args)
+            result = 'PASS' if actual == expected else 'FAIL'
+            print('    {0}: {1} expected={2} actual={3}'.format(result, expression, expected, actual))
+    else:
+        if args.expression is None:
+            print('missing expression')
+            sys.exit(-1)
+        try:
+            output = parse(args.expression, args)
+            if output is not None:
+                if args.hex:
+                    print(hex(int(output)))
+                else:
+                    print(output)
+        except ParseException as e:
+            print(e.msg)
+            print(args.expression, args)
+            print(' ' * e.offset + '^')
+            sys.exit(-1)
+
+    sys.exit(0)

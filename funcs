@@ -1,0 +1,81 @@
+#!/usr/bin/env perl
+
+use Term::ANSIColor;
+
+# set colors here
+$y = "yellow";  # function name color
+$c = "cyan";    # colon color
+$m = "magenta"; # line number color
+$r = "red";     # match color
+
+#print color(\$y), "\$filename\\n", color("reset") unless (\$match);
+
+#my @a;
+
+die "usage: funcs filename\n" if( $#ARGV < 0 );
+
+# "ctags -x filename" gives output like this
+# Frm1FpgaCls      function     49 HIL/Frm1/Cmpnt/hilFRM1Devices/src/Frm1FpgaCls.cpp Frm1FpgaCls::Frm1FpgaCls()
+@funcs = `ctags -x --c-kinds=f $ARGV[0]`;
+
+# hash of each functions info keyed by the line number where the function is
+# defined
+my %functions;
+
+foreach $function ( @funcs )
+{
+   chomp $function;
+   # split into name type line_number file_name matching_line
+   my($name, $type, $line_number, $file_name, $method) = split /\s+/,$function,5;
+
+   my $parameters = '';
+   # pull off the paraters
+   if ($method =~ /(\()/)
+   {
+      $method = $`;
+      $parameters = $1 . $';
+   }
+
+   my $return_type = '';
+   # pull off the return type if there is one
+   if ($method =~ /\s/)
+   {
+      $return_type = $`;
+      $method = $';
+   }
+
+   my $class = '';
+   # pull off the class name if there is one
+   if ($method =~ /::/)
+   {
+      $class = $`;
+      $method = $';
+   }
+
+   #print "line_number=$line_number\n";
+   #print "\treturn_type=$return_type\n";
+   #print "\tclass=$class\n";
+   #print "\tmethod=$method\n";
+   #print "\tparameters=$parameters\n";
+
+   # put all the info into a hash keyed by the line number
+   $functions{$line_number} = { 'return_type' => $return_type, 'class' => $class, 'method' => $method, 'parameters' => $parameters };
+}
+
+# output sorted by line numbers and display the methods
+foreach $line_number (sort {$a <=> $b} keys %functions)
+{
+   $ref = $functions{$line_number};
+   my $return_type = $ref->{'return_type'};
+   my $class = $ref->{'class'};
+   my $method = $ref->{'method'};
+   my $parameters = $ref->{'parameters'};
+   my $colons = ($class ne '') ? '::' : ''; # to put between the class and method
+
+   # append a space after the return type
+   if ($return_type ne '') { $return_type .= ' '}
+
+   print color("red"), "$line_number\t", color("yellow"), "$return_type", color("green"), "$class", color("reset"), "$colons", color("magenta"), "$method ", color("cyan"), "$parameters\n",color("reset"), "\r";
+}
+
+
