@@ -3,6 +3,8 @@ import argparse
 import dpkt
 import ipaddress
 
+# Install dpkt: pip3 install dpkt
+
 # The correct reassembly buffer is identified by an equality of
 # the following fields:  the  foreign  and  local  internet  address,  the
 # protocol ID, and the identification field.
@@ -273,36 +275,35 @@ def process(reader, writer, args):
     if args.stats:
         defrag.stats()
 
-def is_pcap_or_pcapng(filename):
-    '''Determine if a file is pcapng or pcap'''
-    with open(filename, 'rb') as in_fh:
-        uint32 = int.from_bytes(in_fh.read(4), byteorder='little', signed=False)
-        # A PcapNG file must start with a Section Header Block (SHB).
-        # The first four bytes are the block type which should be 0x0a0d0d0a
-        if uint32 == 0x0a0d0d0a:
-            return 'pcapng'
 
-    # default to pcap
-    return 'pcap'
+def pcap_pcapng_reader(in_fh):
+    '''Try to open as pcap or pcapng file'''
+    try:
+        reader = dpkt.pcap.Reader(in_fh)
+        return reader
+    except ValueError:
+        try:
+            in_fh.seek(0)
+            reader = dpkt.pcapng.Reader(in_fh)
+            return reader
+        except ValueError:
+            print(f'file does not appear to be a pcap or pcapng file')
+    return None
 
 def main(args):
-
-    inpcap_type = is_pcap_or_pcapng(args.inpcap)
 
     with open(args.inpcap, 'rb') as in_fh:
         with open(args.outpcap, 'wb') as out_fh:
 
-            if inpcap_type == 'pcapng':
-                reader = dpkt.pcapng.Reader(in_fh)
-            else:
-                reader = dpkt.pcap.Reader(in_fh)
+            reader = pcap_pcapng_reader(in_fh)
+            if reader:
 
-            if args.outpcap.lower().endswith('.pcapng'):
-                writer = dpkt.pcapng.Writer(out_fh, snaplen=0xffff)
-            else:
-                writer = dpkt.pcap.Writer(out_fh)
+                if args.outpcap.lower().endswith('.pcapng'):
+                    writer = dpkt.pcapng.Writer(out_fh, snaplen=0xffff)
+                else:
+                    writer = dpkt.pcap.Writer(out_fh)
 
-            process(reader, writer, args)
+                process(reader, writer, args)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='IP defragment a pcap')
