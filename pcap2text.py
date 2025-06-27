@@ -39,20 +39,33 @@ def process(reader, out_fh):
         hex_dump(out_fh, pkt)
 
 
+def pcap_pcapng_reader(in_fh):
+    '''Try to open as pcap or pcapng file'''
+    try:
+        reader = dpkt.pcap.Reader(in_fh)
+        return reader
+    except ValueError:
+        try:
+            in_fh.seek(0)
+            reader = dpkt.pcapng.Reader(in_fh)
+            return reader
+        except ValueError:
+            print(f'file does not appear to be a pcap or pcapng file')
+    return None
+
+
 def main(args):
 
     with open(args.inpcap,'rb') as in_fh:
         with open(args.outtext,'w') as out_fh:
 
-            if args.inpcap.lower().endswith('.pcapng'):
-                reader = dpkt.pcapng.Reader(in_fh)
-            else:
-                reader = dpkt.pcap.Reader(in_fh)
+            reader = pcap_pcapng_reader(in_fh)
+            if reader:
 
-            out_fh.write('# Convert back to pcap:\n')
-            out_fh.write(f'# text2pcap -t "{timeformat}" {args.outtext} <out-pcap>\n\n')
+                out_fh.write('# Convert back to pcap:\n')
+                out_fh.write(f'# text2pcap -t "{timeformat}" {args.outtext} <out-pcap>\n\n')
 
-            process(reader, out_fh)
+                process(reader, out_fh)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Write text file from pcap (opposite of text2pcap)')
