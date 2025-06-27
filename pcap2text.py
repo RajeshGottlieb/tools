@@ -2,9 +2,9 @@
 import argparse
 import dpkt
 import time
-import re
+import math
 
-timeformat = "%Y-%m-%d %H:%M:%S"
+timeformat = "%Y-%m-%d %H:%M:%S."
 
 def to_printable_ascii(byte):
     return chr(byte) if 32 <= byte <= 126 else '.'
@@ -21,11 +21,11 @@ def hex_dump(out_fh, pkt_bytes):
 
 
 def time2string(seconds_float):
-    seconds, sub_seconds = str(seconds_float).split('.') 
-    time_tuple = time.gmtime(int(seconds))
-    time_str = time.strftime(timeformat, time_tuple)
-    if sub_seconds:
-        time_str = time_str + '.' + sub_seconds
+    fractional, seconds = math.modf(seconds_float)
+    time_tuple = time.gmtime(seconds)
+    time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(seconds))
+    micro_seconds = int(round(fractional * 1000 * 1000))
+    time_str = time_str + '.' + str(micro_seconds)
     return time_str
 
 
